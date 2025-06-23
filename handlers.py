@@ -1,9 +1,19 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
-from keyboards import categories_keyboard, subcategories_keyboard, products_keyboard, buy_keyboard
+from keyboards import (
+    categories_keyboard,
+    subcategories_keyboard,
+    products_keyboard,
+    buy_keyboard,
+    category_keyboard,
+    cart_keyboard,
+    orders_keyboard,
+    manager_keyboard,
+    CATEGORY_EMOJIS,
+)
 from products import products
-from config import ADMIN_ID
+from config import ADMIN_ID, MANAGER_PHONE
 
 router = Router()
 
@@ -16,22 +26,20 @@ PROMOCODES = {
     "BOOM10": 0.10,  # Промокод на 10% скидку
 }
 
-MANAGER_PHONE = "+998 90 988 38 34"
-
 # ✅ /start
 @router.message(Command("start"))
 async def start(message: Message):
     subscribers.add(message.from_user.id)
-    await message.answer(
-        "Добро пожаловать в 🛍️ <b>ShopBoom!</b>\n\nВыберите категорию товара:",
-        reply_markup=categories_keyboard(),
-        parse_mode="HTML"
-    )
-    await message.answer(
-        "Если нужна помощь, свяжитесь с менеджером 📞\n\n"
-        f"<b>Телефон менеджера:</b> {MANAGER_PHONE}",
-        parse_mode="HTML"
-    )
+    await message.answer("Добро пожаловать в 🛍️ <b>ShopBoom!</b>", parse_mode="HTML")
+    for category in products.keys():
+        await message.answer(
+            f"{CATEGORY_EMOJIS.get(category, '')} <b>{category}</b>",
+            reply_markup=category_keyboard(category),
+            parse_mode="HTML",
+        )
+    await message.answer("🛒 <b>Корзина</b>", reply_markup=cart_keyboard(), parse_mode="HTML")
+    await message.answer("📦 <b>Мои заказы</b>", reply_markup=orders_keyboard(), parse_mode="HTML")
+    await message.answer("📞 <b>Связаться с менеджером</b>", reply_markup=manager_keyboard(), parse_mode="HTML")
 
 # ✅ /myorders
 @router.message(Command("myorders"))
@@ -51,6 +59,25 @@ async def my_orders(message: Message):
             f"Адрес: {order['address']}\n\n"
         )
     await message.answer(text, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "my_orders")
+async def my_orders_cb(callback: CallbackQuery):
+    history = user_order_history.get(callback.from_user.id, [])
+    if not history:
+        await callback.message.answer("🛒 У вас пока нет оформленных заказов.")
+        return
+
+    text = "📋 <b>Ваши заказы:</b>\n\n"
+    for idx, order in enumerate(history, start=1):
+        text += (
+            f"#{idx} — <b>{order['product']}</b>\n"
+            f"Размер: {order['size']}\n"
+            f"Цена: {int(order['final_price']):,} сум\n"
+            f"Телефон: {order['phone']}\n"
+            f"Адрес: {order['address']}\n\n"
+        )
+    await callback.message.answer(text, parse_mode="HTML")
 
 # ✅ Назад к категориям
 @router.callback_query(F.data == "back_to_main")
@@ -103,9 +130,14 @@ async def show_product(callback: CallbackQuery):
                     photo = FSInputFile(item["photo"])
                     await callback.message.answer_photo(
                         photo=photo,
-                        caption=f"<b>{item['name']}</b>\n\n{item['description']}\n\n💵 <b>{item['price']:,} сум</b>",
+                        caption=(
+                            f"🛍️ <b>{item['name']}</b>\n"
+                            f"💸 <b>Цена:</b> <code>{item['price']:,} сум</code>\n"
+                            "📏 <b>Размеры:</b> S, M, L, XL\n"
+                            f"📄 <b>Описание:</b> {item['description']}"
+                        ),
                         reply_markup=buy_keyboard(product_id),
-                        parse_mode="HTML"
+                        parse_mode="HTML",
                     )
                     return
 
@@ -133,6 +165,32 @@ async def choose_size(callback: CallbackQuery):
 async def cancel_order(callback: CallbackQuery):
     user_orders.pop(callback.from_user.id, None)
     await callback.message.answer("❌ Ваш заказ был отменён.")
+
+
+@router.callback_query(F.data == "cart")
+async def show_cart(callback: CallbackQuery):
+    await callback.message.answer("🛒 Ваша корзина пока пуста.")
+
+
+@router.callback_query(F.data == "contact_manager")
+async def contact_manager(callback: CallbackQuery):
+    await callback.message.answer(
+        f"<b>Телефон менеджера:</b> {MANAGER_PHONE}", parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("more:"))
+async def show_more(callback: CallbackQuery):
+    product_id = int(callback.data.split(":")[1])
+    for cat in products.values():
+        for subcat in cat.values():
+            for item in subcat:
+                if item["id"] == product_id:
+                    await callback.message.answer(
+                        f"📄 <b>Описание товара:</b> {item['description']}",
+                        parse_mode="HTML",
+                    )
+                    return
 
 # ✅ Выбор размера → Промокод
 @router.callback_query(F.data.startswith("size:"))

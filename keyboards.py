@@ -1,15 +1,53 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from products import products
+from config import MANAGER_PHONE
 
-# Клавиатура категорий
-def categories_keyboard():
-    keyboard = InlineKeyboardMarkup(
+# Emojis for categories
+CATEGORY_EMOJIS = {
+    "Одежда": "👗",
+    "Обувь": "👟"
+}
+
+
+def category_keyboard(category: str) -> InlineKeyboardMarkup:
+    """Keyboard with a single category button."""
+    emoji = CATEGORY_EMOJIS.get(category, "")
+    return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=category, callback_data=f"category:{category}")]
-            for category in products.keys()
+            [InlineKeyboardButton(text=f"{emoji} {category}", callback_data=f"category:{category}")]
         ]
     )
-    return keyboard
+
+
+def cart_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="🛒 Корзина", callback_data="cart")]]
+    )
+
+
+def orders_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="📦 Мои заказы", callback_data="my_orders")]]
+    )
+
+
+def manager_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="📞 Связаться с менеджером", url=f"tel:{MANAGER_PHONE}")]]
+    )
+
+# Клавиатура категорий
+def categories_keyboard() -> InlineKeyboardMarkup:
+    """Main menu keyboard with categories and service buttons."""
+    buttons = [
+        [InlineKeyboardButton(text=f"{CATEGORY_EMOJIS.get(cat, '')} {cat}", callback_data=f"category:{cat}")]
+        for cat in products.keys()
+    ]
+    buttons.append([InlineKeyboardButton(text="🛒 Корзина", callback_data="cart")])
+    buttons.append([InlineKeyboardButton(text="📦 Мои заказы", callback_data="my_orders")])
+    buttons.append([InlineKeyboardButton(text="📞 Связаться с менеджером", callback_data="contact_manager")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # Клавиатура подкатегорий
 def subcategories_keyboard(category):
@@ -38,6 +76,7 @@ def buy_keyboard(product_id):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Купить", callback_data=f"buy:{product_id}")],
+            [InlineKeyboardButton(text="ℹ️ Подробнее", callback_data=f"more:{product_id}")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
         ]
     )
