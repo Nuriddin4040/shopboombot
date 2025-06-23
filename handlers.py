@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
-from keyboards import (
+from ui import (
     categories_keyboard,
     subcategories_keyboard,
     products_keyboard,
@@ -10,6 +10,9 @@ from keyboards import (
     cart_keyboard,
     orders_keyboard,
     manager_keyboard,
+    admin_panel_keyboard,
+    format_orders_list,
+    format_user_history,
     CATEGORY_EMOJIS,
 )
 from products import products
@@ -29,6 +32,7 @@ PROMOCODES = {
 # ✅ /start
 @router.message(Command("start"))
 async def start(message: Message):
+    """Greet user and show main menu."""
     subscribers.add(message.from_user.id)
     await message.answer("Добро пожаловать в 🛍️ <b>ShopBoom!</b>", parse_mode="HTML")
     for category in products.keys():
@@ -44,39 +48,25 @@ async def start(message: Message):
 # ✅ /myorders
 @router.message(Command("myorders"))
 async def my_orders(message: Message):
+    """Send list of user orders."""
     history = user_order_history.get(message.from_user.id, [])
     if not history:
         await message.answer("🛒 У вас пока нет оформленных заказов.")
         return
 
-    text = "📋 <b>Ваши заказы:</b>\n\n"
-    for idx, order in enumerate(history, start=1):
-        text += (
-            f"#{idx} — <b>{order['product']}</b>\n"
-            f"Размер: {order['size']}\n"
-            f"Цена: {int(order['final_price']):,} сум\n"
-            f"Телефон: {order['phone']}\n"
-            f"Адрес: {order['address']}\n\n"
-        )
+    text = format_user_history(history)
     await message.answer(text, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "my_orders")
 async def my_orders_cb(callback: CallbackQuery):
+    """Callback handler for order history button."""
     history = user_order_history.get(callback.from_user.id, [])
     if not history:
         await callback.message.answer("🛒 У вас пока нет оформленных заказов.")
         return
 
-    text = "📋 <b>Ваши заказы:</b>\n\n"
-    for idx, order in enumerate(history, start=1):
-        text += (
-            f"#{idx} — <b>{order['product']}</b>\n"
-            f"Размер: {order['size']}\n"
-            f"Цена: {int(order['final_price']):,} сум\n"
-            f"Телефон: {order['phone']}\n"
-            f"Адрес: {order['address']}\n\n"
-        )
+    text = format_user_history(history)
     await callback.message.answer(text, parse_mode="HTML")
 
 # ✅ Назад к категориям
@@ -312,53 +302,50 @@ async def finalize_order(message: Message):
 # ✅ /admin
 @router.message(Command("admin"))
 async def admin_panel(message: Message):
+    """Display admin menu with management actions."""
     if message.from_user.id != int(ADMIN_ID):
         await message.answer("❌ У вас нет доступа к админ-панели.")
         return
 
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📊 Количество подписчиков", callback_data="subscribers_count")],
-            [InlineKeyboardButton(text="📋 Все заказы", callback_data="all_orders")],
-            [InlineKeyboardButton(text="📢 Сделать рассылку", callback_data="broadcast")]
-        ]
+    # Show admin panel with modern buttons
+    await message.answer(
+        "👑 <b>Админ-панель:</b>",
+        reply_markup=admin_panel_keyboard(),
+        parse_mode="HTML",
     )
-    await message.answer("👑 <b>Админ-панель:</b>", reply_markup=kb, parse_mode="HTML")
 
 # ✅ Кнопки админ-панели
 @router.callback_query(F.data == "subscribers_count")
 async def show_subscribers(callback: CallbackQuery):
+    """Show total subscribers in a popup message."""
     count = len(subscribers)
-    await callback.message.answer(f"👥 Всего подписчиков: <b>{count}</b>", parse_mode="HTML")
+    await callback.answer(f"👥 Подписчиков: {count}", show_alert=True)
 
 @router.callback_query(F.data == "all_orders")
 async def show_all_orders(callback: CallbackQuery):
+    """Send list of all orders to admin."""
     if not orders:
-        await callback.message.answer("📭 Заказов пока нет.")
+        await callback.answer("📭 Заказов пока нет", show_alert=True)
         return
 
-    text = "📋 <b>Все заказы:</b>\n\n"
-    for idx, order in enumerate(orders, start=1):
-        text += (
-            f"#{idx} — {order['product']}\n"
-            f"Размер: {order['size']}\n"
-            f"Цена: {int(order['final_price']):,} сум\n"
-            f"Имя: {order['name']}\n"
-            f"Телефон: {order['phone']}\n"
-            f"Адрес: {order['address']}\n\n"
-        )
+    text = format_orders_list(orders)
     await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer("✅ Готово")
 
 @router.callback_query(F.data == "broadcast")
 async def start_broadcast(callback: CallbackQuery):
+    """Ask admin to send broadcast text."""
+    await callback.answer("Введите текст рассылки", show_alert=True)
     await callback.message.answer("✍️ Напишите текст для рассылки:")
 
 @router.message(lambda message: message.from_user.id == int(ADMIN_ID))
 async def send_broadcast(message: Message):
+    """Send broadcast message to all subscribers."""
     text = message.text
     for user_id in subscribers:
         try:
             await message.bot.send_message(chat_id=user_id, text=text)
         except Exception as e:
             print(f"❗ Не удалось отправить сообщение пользователю {user_id}: {e}")
-    await message.answer("✅ Рассылка завершена.")
+
+    await message.answer("✅ Рассылка завершена.", reply_markup=admin_panel_keyboard())
