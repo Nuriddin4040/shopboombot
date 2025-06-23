@@ -141,24 +141,15 @@ async def show_product(callback: CallbackQuery):
                     )
                     return
 
-# ✅ Купить → Выбор размера
+# ✅ Начало оформления заказа -> имя
 @router.callback_query(F.data.startswith("buy:"))
-async def choose_size(callback: CallbackQuery):
+async def start_order(callback: CallbackQuery):
     product_id = int(callback.data.split(":")[1])
     user_orders[callback.from_user.id] = {"product_id": product_id}
-    
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="S", callback_data="size:S"),
-                InlineKeyboardButton(text="M", callback_data="size:M"),
-                InlineKeyboardButton(text="L", callback_data="size:L"),
-                InlineKeyboardButton(text="XL", callback_data="size:XL")
-            ],
-            [InlineKeyboardButton(text="❌ Отменить заказ", callback_data="cancel_order")]
-        ]
+    await callback.message.answer(
+        "👤 Введите ваше <b>имя</b>:",
+        parse_mode="HTML",
     )
-    await callback.message.answer("🧵 Выберите размер:", reply_markup=kb)
 
 # ✅ Отмена заказа
 @router.callback_query(F.data == "cancel_order")
@@ -208,11 +199,14 @@ async def check_promocode(message: Message):
 
     if promocode.upper() in PROMOCODES:
         user_orders[message.from_user.id]["discount"] = PROMOCODES[promocode.upper()]
-        await message.answer(f"✅ Промокод принят! Скидка {int(PROMOCODES[promocode.upper()] * 100)}% применена 🎉")
+        await message.answer(
+            f"🎁 <b>Ваш промокод активен:</b> <code>{promocode.upper()}</code> — скидка {int(PROMOCODES[promocode.upper()] * 100)}%!",
+            parse_mode="HTML",
+        )
     else:
         user_orders[message.from_user.id]["discount"] = 0
 
-    await message.answer("Введите ваше <b>имя</b>:", parse_mode="HTML")
+    await finalize_order(message)
 
 # ✅ Имя → Телефон → Адрес
 @router.message(lambda message: message.from_user.id in user_orders and "name" not in user_orders[message.from_user.id])
@@ -225,10 +219,24 @@ async def ask_address(message: Message):
     user_orders[message.from_user.id]["phone"] = message.text
     await message.answer("Введите ваш <b>адрес доставки</b>:", parse_mode="HTML")
 
-# ✅ Завершение заказа + автосохранение
 @router.message(lambda message: message.from_user.id in user_orders and "address" not in user_orders[message.from_user.id])
-async def confirm_order(message: Message):
+async def ask_size(message: Message):
     user_orders[message.from_user.id]["address"] = message.text
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="S", callback_data="size:S"),
+                InlineKeyboardButton(text="M", callback_data="size:M"),
+                InlineKeyboardButton(text="L", callback_data="size:L"),
+                InlineKeyboardButton(text="XL", callback_data="size:XL")
+            ],
+            [InlineKeyboardButton(text="❌ Отменить заказ", callback_data="cancel_order")]
+        ]
+    )
+    await message.answer("🧵 Выберите размер:", reply_markup=kb)
+
+# ✅ Завершение заказа + автосохранение
+async def finalize_order(message: Message):
     order = user_orders.pop(message.from_user.id)
 
     product = None
@@ -261,14 +269,13 @@ async def confirm_order(message: Message):
 
         # Сообщение клиенту
         await message.answer(
-            f"✅ <b>Ваш заказ принят!</b>\n\n"
+            f"🎉 <b>Заказ оформлен!</b>\n\n"
             f"📦 <b>Товар:</b> {product['name']}\n"
             f"📏 <b>Размер:</b> {order.get('size', 'Не выбран')}\n"
-            f"💵 <b>Цена со скидкой:</b> {int(final_price):,} сум\n"
-            f"👤 <b>Имя:</b> {order['name']}\n"
-            f"📞 <b>Телефон:</b> {order['phone']}\n"
-            f"🏠 <b>Адрес:</b> {order['address']}",
-            parse_mode="HTML"
+            f"💵 <b>Цена со скидкой:</b> {int(final_price):,} сум\n\n"
+            "Посмотреть ваши заказы можно по кнопке ниже.",
+            reply_markup=orders_keyboard(),
+            parse_mode="HTML",
         )
 
         # Сообщение админу
