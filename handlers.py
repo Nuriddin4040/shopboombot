@@ -134,12 +134,21 @@ async def show_product(callback: CallbackQuery):
 # ✅ Начало оформления заказа -> имя
 @router.callback_query(F.data.startswith("buy:"))
 async def start_order(callback: CallbackQuery):
-    product_id = int(callback.data.split(":")[1])
-    user_orders[callback.from_user.id] = {"product_id": product_id}
-    await callback.message.answer(
-        "👤 Введите ваше <b>имя</b>:",
-        parse_mode="HTML",
-    )
+    try:
+        product_id = int(callback.data.split(":")[1])
+        user_orders[callback.from_user.id] = {"product_id": product_id}
+        print(
+            f"Buy callback from {callback.from_user.id}, product {product_id}"
+        )
+        await callback.message.answer(
+            "👤 Введите ваше <b>имя</b>:",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        print(f"❗ Error in start_order: {e}")
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте ещё раз или обратитесь к менеджеру."
+        )
 
 # ✅ Отмена заказа
 @router.callback_query(F.data == "cancel_order")
