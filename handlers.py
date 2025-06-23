@@ -188,12 +188,23 @@ async def ask_promocode(callback: CallbackQuery):
     size = callback.data.split(":")[1]
     if callback.from_user.id in user_orders:
         user_orders[callback.from_user.id]["size"] = size
-        await callback.message.answer("Если у вас есть промокод, отправьте его сейчас 🎟️.\n\nИли введите любое сообщение, чтобы продолжить без скидки.")
+        print(f"Size selected by {callback.from_user.id}: {size}")
+        await callback.message.answer(
+            "Если у вас есть промокод, отправьте его сейчас 🎟️.\n\n"
+            "Или введите любое сообщение, чтобы продолжить без скидки."
+        )
 
 # ✅ Проверка промокода
-@router.message(lambda message: message.from_user.id in user_orders and "promocode_checked" not in user_orders[message.from_user.id])
+@router.message(
+    lambda message: (
+        message.from_user.id in user_orders
+        and "size" in user_orders[message.from_user.id]
+        and "promocode_checked" not in user_orders[message.from_user.id]
+    )
+)
 async def check_promocode(message: Message):
     promocode = message.text.strip()
+    print(f"Promocode received from {message.from_user.id}: {promocode}")
     user_orders[message.from_user.id]["promocode_checked"] = True
 
     if promocode.upper() in PROMOCODES:
@@ -208,28 +219,53 @@ async def check_promocode(message: Message):
     await finalize_order(message)
 
 # ✅ Имя → Телефон → Адрес
-@router.message(lambda message: message.from_user.id in user_orders and "name" not in user_orders[message.from_user.id])
+@router.message(
+    lambda message: (
+        message.from_user.id in user_orders
+        and "name" not in user_orders[message.from_user.id]
+    )
+)
 async def ask_phone(message: Message):
     user_orders[message.from_user.id]["name"] = message.text
-    await message.answer("Введите ваш <b>номер телефона</b>:", parse_mode="HTML")
+    print(f"Name received from {message.from_user.id}: {message.text}")
+    await message.answer(
+        "Введите ваш <b>номер телефона</b>:", parse_mode="HTML"
+    )
 
-@router.message(lambda message: message.from_user.id in user_orders and "phone" not in user_orders[message.from_user.id])
+@router.message(
+    lambda message: (
+        message.from_user.id in user_orders
+        and "name" in user_orders[message.from_user.id]
+        and "phone" not in user_orders[message.from_user.id]
+    )
+)
 async def ask_address(message: Message):
     user_orders[message.from_user.id]["phone"] = message.text
-    await message.answer("Введите ваш <b>адрес доставки</b>:", parse_mode="HTML")
+    print(f"Phone received from {message.from_user.id}: {message.text}")
+    await message.answer(
+        "Введите ваш <b>адрес доставки</b>:", parse_mode="HTML"
+    )
 
-@router.message(lambda message: message.from_user.id in user_orders and "address" not in user_orders[message.from_user.id])
+@router.message(
+    lambda message: (
+        message.from_user.id in user_orders
+        and "name" in user_orders[message.from_user.id]
+        and "phone" in user_orders[message.from_user.id]
+        and "address" not in user_orders[message.from_user.id]
+    )
+)
 async def ask_size(message: Message):
     user_orders[message.from_user.id]["address"] = message.text
+    print(f"Address received from {message.from_user.id}: {message.text}")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="S", callback_data="size:S"),
                 InlineKeyboardButton(text="M", callback_data="size:M"),
                 InlineKeyboardButton(text="L", callback_data="size:L"),
-                InlineKeyboardButton(text="XL", callback_data="size:XL")
+                InlineKeyboardButton(text="XL", callback_data="size:XL"),
             ],
-            [InlineKeyboardButton(text="❌ Отменить заказ", callback_data="cancel_order")]
+            [InlineKeyboardButton(text="❌ Отменить заказ", callback_data="cancel_order")],
         ]
     )
     await message.answer("🧵 Выберите размер:", reply_markup=kb)
@@ -237,6 +273,7 @@ async def ask_size(message: Message):
 # ✅ Завершение заказа + автосохранение
 async def finalize_order(message: Message):
     order = user_orders.pop(message.from_user.id)
+    print(f"Finalizing order for {message.from_user.id}: {order}")
 
     product = None
     for cat in products.values():
@@ -358,3 +395,13 @@ async def send_broadcast(message: Message):
             print(f"❗ Не удалось отправить сообщение пользователю {user_id}: {e}")
 
     await message.answer("✅ Рассылка завершена.", reply_markup=admin_panel_keyboard())
+
+
+# ✅ Фолбэк для незавершённых заказов
+@router.message(lambda message: message.from_user.id in user_orders)
+async def order_error(message: Message):
+    """Handle unexpected messages during the order flow."""
+    print(f"Unexpected message from {message.from_user.id}: {message.text}")
+    await message.answer(
+        "⚠️ Произошла ошибка при оформлении заказа. Попробуйте ещё раз!"
+    )
